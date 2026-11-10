@@ -1,6 +1,7 @@
 import { getBalances } from './balances'
 import { calculateItemizedSplit } from './itemized'
 import { expenseFormSchema } from './schemas'
+import { getExpenseShares } from './shares'
 import { calculateShare } from './totals'
 
 const sharesOf = (split: ReturnType<typeof calculateItemizedSplit>) =>
@@ -24,6 +25,19 @@ describe('calculateItemizedSplit', () => {
       { price: 100, paidFor: ['c', 'b', 'a'] },
     ])
     expect(sharesOf(split)).toEqual({ a: 34, b: 33, c: 33 })
+  })
+
+  it('rotates the remaining cent between expenses', () => {
+    const favoured = new Set(
+      Array.from({ length: 50 }, (_, index) => {
+        const { paidFor } = calculateItemizedSplit(
+          [{ price: 100, paidFor: ['a', 'b', 'c'] }],
+          `expense-${index}`,
+        )
+        return paidFor.find(({ shares }) => shares === 34)!.participant
+      }),
+    )
+    expect(favoured.size).toBe(3)
   })
 
   it('does not accumulate rounding errors over items', () => {
@@ -82,7 +96,8 @@ describe('calculateItemizedSplit', () => {
         price: random(10_000) - 1000,
         paidFor: people.slice(0, 1 + random(people.length)),
       }))
-      const split = calculateItemizedSplit(items)
+      const id = `expense-${run}`
+      const split = calculateItemizedSplit(items, id)
       const sum = split.paidFor.reduce((sum, { shares }) => sum + shares, 0)
       expect(sum).toBe(split.amount)
       expect(
@@ -93,6 +108,7 @@ describe('calculateItemizedSplit', () => {
         [...items]
           .reverse()
           .map((item) => ({ ...item, paidFor: [...item.paidFor].reverse() })),
+        id,
       )
       expect(sharesOf(reordered)).toEqual(sharesOf(split))
     }
@@ -124,13 +140,59 @@ describe('balances of an itemized expense', () => {
   })
 })
 
+describe('getExpenseShares of an itemized expense', () => {
+  it.each([
+    [
+      'a discount',
+      [
+        [500, 'a'],
+        [300, 'b'],
+        [-400, 'b'],
+      ],
+    ],
+    [
+      'a share of zero',
+      [
+        [500, 'a'],
+        [300, 'b'],
+        [-300, 'b'],
+      ],
+    ],
+    [
+      'a refund',
+      [
+        [-500, 'a'],
+        [-333, 'b'],
+      ],
+    ],
+  ] as [string, [number, string][]][])(
+    'keeps the exact shares of %s',
+    (_, rows) => {
+      const split = calculateItemizedSplit(
+        rows.map(([price, participant]) => ({ price, paidFor: [participant] })),
+        'expense-1',
+      )
+      const shares = getExpenseShares({
+        id: 'expense-1',
+        amount: split.amount,
+        splitMode: 'BY_ITEM',
+        paidFor: split.paidFor.map(({ participant, shares }) => ({
+          participantId: participant,
+          shares,
+        })),
+      })
+      expect(Object.fromEntries(shares)).toEqual(sharesOf(split))
+    },
+  )
+})
+
 describe('expenseFormSchema', () => {
   const expense = {
     expenseDate: new Date(),
     title: 'Restaurant',
     amount: 10,
     paidBy: 'a',
-    paidFor: [{ participant: 'a', shares: '10.00' }],
+    paidFor: [{ participant: 'a', shares: '1' }],
     splitMode: 'BY_ITEM',
     saveDefaultSplittingOptions: false,
     isReimbursement: false,
@@ -161,17 +223,6 @@ describe('expenseFormSchema', () => {
       ['items.0.name', 'min1'],
       ['items.0.price', 'amountNotZero'],
       ['items.0.paidFor', 'itemPaidForMin1'],
-    ])
-  })
-
-  it('allows zero or negative shares only when splitting by item', () => {
-    const paidFor = [
-      { participant: 'a', shares: '10.00' },
-      { participant: 'b', shares: '0.00' },
-    ]
-    expect(errorsOf({ items: [item], paidFor })).toBeUndefined()
-    expect(errorsOf({ splitMode: 'BY_AMOUNT', paidFor })).toEqual([
-      ['paidFor', 'noZeroShares'],
     ])
   })
 })

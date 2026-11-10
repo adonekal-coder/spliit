@@ -1,4 +1,4 @@
-import { Category, Group } from '@prisma/client'
+import { Category, Group } from '@/generated/prisma/browser'
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 import { Currency, getCurrency } from './currency'
@@ -25,8 +25,22 @@ export function formatDate(
 }
 
 /**
+ * Converts a date-only field to a date on its own calendar day.
+ *
+ * Fields stored as DATE type in the database (e.g., expenseDate) come back at
+ * UTC midnight. Reading them in the local timezone would shift them to the
+ * previous day west of UTC, so the calendar day is taken from the UTC
+ * components and rebuilt as a local date.
+ *
+ * @param date - The date to convert (typically from a database DATE field, e.g., 2025-10-17T00:00:00.000Z)
+ * @returns A date at local midnight on the calendar day the field stores
+ */
+export function dateOnlyToLocalDate(date: Date) {
+  return new Date(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate())
+}
+
+/**
  * Formats a date-only field (without time) for display.
- * Extracts UTC date components to avoid timezone shifts that can cause off-by-one day errors.
  * Use this for dates stored as DATE type in the database (e.g., expenseDate).
  *
  * @param date - The date to format (typically from a database DATE field, e.g., 2025-10-17T00:00:00.000Z)
@@ -39,15 +53,7 @@ export function formatDateOnly(
   locale: string,
   options: { dateStyle?: DateTimeStyle; timeStyle?: DateTimeStyle } = {},
 ) {
-  // Extract UTC date components to avoid timezone shifts
-  const year = date.getUTCFullYear()
-  const month = date.getUTCMonth()
-  const day = date.getUTCDate()
-
-  // Create a new date in the user's local timezone with these components
-  const localDate = new Date(year, month, day)
-
-  return localDate.toLocaleString(locale, {
+  return dateOnlyToLocalDate(date).toLocaleString(locale, {
     ...options,
   })
 }
@@ -143,14 +149,25 @@ export function formatAmountAsDecimal(amount: number, currency: Currency) {
   return amountAsDecimal(amount, currency).toFixed(currency.decimal_digits)
 }
 
-export const enforceCurrencyPattern = (value: string) =>
-  value
+/**
+ * Keeps only what can be part of a number in the typed value. Given a
+ * currency, also drops decimals beyond the ones it has: an amount is rounded
+ * to those when saved, and the "amounts must add up" check compares exact
+ * values, so a third decimal would fail it invisibly. A rate keeps them all.
+ */
+export const enforceCurrencyPattern = (value: string, currency?: Currency) => {
+  const number = value
     .replace(/^\s*-/, '_') // replace leading minus with _
     .replace(/[.,]/, '#') // replace first comma with #
     .replace(/[-.,]/g, '') // remove other minus and commas characters
     .replace(/_/, '-') // change back _ to minus
     .replace(/#/, '.') // change back # to dot
     .replace(/[^-\d.]/g, '') // remove all non-numeric characters
+  if (!currency) return number
+  const [integer, fraction] = number.split('.')
+  if (fraction === undefined || currency.decimal_digits === 0) return integer
+  return `${integer}.${fraction.slice(0, currency.decimal_digits)}`
+}
 
 export function formatFileSize(size: number, locale: string) {
   const formatNumber = (num: number) =>

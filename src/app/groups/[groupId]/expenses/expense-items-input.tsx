@@ -2,6 +2,7 @@ import { Button } from '@/components/ui/button'
 import {
   FormControl,
   FormField,
+  FormFieldScope,
   FormItem,
   FormLabel,
   FormMessage,
@@ -9,8 +10,9 @@ import {
 import { Input } from '@/components/ui/input'
 import { Locale } from '@/i18n/request'
 import { Currency } from '@/lib/currency'
+import { convertToGroupCurrency } from '@/lib/currency-conversion'
 import { calculateItemizedSplit } from '@/lib/itemized'
-import { ExpenseFormValues } from '@/lib/schemas'
+import { ExpenseFormInput } from '@/lib/schemas'
 import {
   enforceCurrencyPattern,
   formatCurrency,
@@ -22,9 +24,9 @@ import { useLocale, useTranslations } from 'next-intl'
 import { useEffect } from 'react'
 import { useFieldArray, useFormContext } from 'react-hook-form'
 
-export const emptyItem: ExpenseFormValues['items'][number] = {
+export const emptyItem: NonNullable<ExpenseFormInput['items']>[number] = {
   name: '',
-  price: '' as any, // Use string to ensure consistent schema handling
+  price: '', // Use string to ensure consistent schema handling
   paidFor: [],
 }
 
@@ -37,10 +39,9 @@ type Props = {
 
 export function ExpenseItemsInput({ group, split, originalCurrency }: Props) {
   const t = useTranslations('ExpenseForm')
-  const tErrors = useTranslations('SchemaErrors')
   const locale = useLocale() as Locale
   const groupCurrency = getCurrencyFromGroup(group)
-  const form = useFormContext<ExpenseFormValues>()
+  const form = useFormContext<ExpenseFormInput>()
   const { fields, append, remove } = useFieldArray({
     control: form.control,
     name: 'items',
@@ -49,19 +50,23 @@ export function ExpenseItemsInput({ group, split, originalCurrency }: Props) {
   const isConverting = !!originalCurrency
 
   const convertPrice = (index: number, originalPrice: string) => {
-    const price = Number(originalPrice) * conversionRate
-    form.setValue(
-      `items.${index}.price`,
-      (originalPrice === '' || Number.isNaN(price)
-        ? ''
-        : price.toFixed(groupCurrency.decimal_digits)) as any, // Use string to ensure consistent schema handling
-      { shouldDirty: true, shouldValidate: form.formState.isSubmitted },
-    )
+    const price =
+      originalPrice === ''
+        ? null
+        : convertToGroupCurrency(
+            Number(originalPrice),
+            conversionRate,
+            groupCurrency,
+          )
+    form.setValue(`items.${index}.price`, price ?? '', {
+      shouldDirty: true,
+      shouldValidate: form.formState.isSubmitted,
+    })
   }
 
   useEffect(() => {
     if (!isConverting || !conversionRate) return
-    form.getValues('items').forEach(({ originalPrice }, index) => {
+    form.getValues('items')?.forEach(({ originalPrice }, index) => {
       if (originalPrice) convertPrice(index, originalPrice)
     })
   }, [conversionRate, isConverting])
@@ -119,6 +124,7 @@ export function ExpenseItemsInput({ group, split, originalCurrency }: Props) {
                             onChange={(event) => {
                               const v = enforceCurrencyPattern(
                                 event.target.value,
+                                originalCurrency,
                               )
                               field.onChange(v)
                               convertPrice(index, v)
@@ -150,7 +156,10 @@ export function ExpenseItemsInput({ group, split, originalCurrency }: Props) {
                           {...field}
                           onChange={(event) => {
                             field.onChange(
-                              enforceCurrencyPattern(event.target.value),
+                              enforceCurrencyPattern(
+                                event.target.value,
+                                groupCurrency,
+                              ),
                             )
                             // The price is not the result of a conversion anymore
                             form.setValue(`items.${index}.originalPrice`, '')
@@ -178,8 +187,9 @@ export function ExpenseItemsInput({ group, split, originalCurrency }: Props) {
             control={form.control}
             name={`items.${index}.paidFor`}
             render={({ field }) => {
+              const gotBy = field.value ?? []
               const everyone = group.participants.every(({ id }) =>
-                field.value.includes(id),
+                gotBy.includes(id),
               )
               return (
                 <FormItem>
@@ -192,7 +202,7 @@ export function ExpenseItemsInput({ group, split, originalCurrency }: Props) {
                       {t('itemsField.gotBy')}
                     </span>
                     {group.participants.map(({ id, name }) => {
-                      const selected = field.value.includes(id)
+                      const selected = gotBy.includes(id)
                       return (
                         <Toggle
                           key={id}
@@ -200,8 +210,8 @@ export function ExpenseItemsInput({ group, split, originalCurrency }: Props) {
                           onClick={() =>
                             field.onChange(
                               selected
-                                ? field.value.filter((value) => value !== id)
-                                : [...field.value, id],
+                                ? gotBy.filter((value) => value !== id)
+                                : [...gotBy, id],
                             )
                           }
                         >
@@ -245,11 +255,9 @@ export function ExpenseItemsInput({ group, split, originalCurrency }: Props) {
           <Plus className="w-4 h-4 mr-2" />
           {t('itemsField.add')}
         </Button>
-        {form.formState.errors.items?.root && (
-          <p className="mt-2 text-sm font-medium text-destructive">
-            {tErrors('itemsMin1')}
-          </p>
-        )}
+        <FormFieldScope name="items">
+          <FormMessage className="mt-2" />
+        </FormFieldScope>
       </div>
 
       {split.paidFor.length > 0 && (
