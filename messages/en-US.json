@@ -196,7 +196,23 @@
       "attachDescription": "See and attach receipts to the expense."
     },
     "amountField": {
-      "label": "Amount"
+      "label": "Amount",
+      "itemize": "Enter items and prices instead",
+      "itemizeOff": "Enter a total amount instead",
+      "itemizedDescription": "Calculated from the items below."
+    },
+    "itemsField": {
+      "title": "Items",
+      "description": "Enter each item with its price, and select who got it. The price of an item is split evenly between the people who got it. Taxes, tips and discounts (with a negative price) can be added as items too.",
+      "name": "Item name",
+      "price": "Price",
+      "originalPrice": "Price to convert",
+      "gotBy": "Who got it?",
+      "everyone": "Everyone",
+      "add": "Add item",
+      "remove": "Remove item",
+      "summary": "Each person’s share",
+      "total": "Total"
     },
     "conversionUnavailable": "To set a different currency per expense and convert amounts, select a non-custom currency for the group.",
     "originalAmountField": {
@@ -238,6 +254,7 @@
       "byShares": "Unevenly – By shares",
       "byPercentage": "Unevenly – By percentage",
       "byAmount": "Unevenly – By amount",
+      "byItem": "Unevenly – By item",
       "saveAsDefault": "Save as default splitting options"
     },
     "DeletePopup": {
@@ -354,6 +371,7 @@
     "min2": "Enter at least two characters.",
     "max5": "Enter at most five characters.",
     "max50": "Enter at most 50 characters.",
+    "max100": "Enter at most 100 characters.",
     "duplicateParticipantName": "Another participant already has this name.",
     "titleRequired": "Please enter a title.",
     "invalidNumber": "Invalid number.",
@@ -364,6 +382,8 @@
     "paidByRequired": "You must select a participant.",
     "paidForMin1": "The expense must be paid for at least one participant.",
     "noZeroShares": "All shares must be higher than 0.",
+    "itemsMin1": "Enter at least one item.",
+    "itemPaidForMin1": "Select who got this item.",
     "amountSum": "Sum of amounts must equal the expense amount.",
     "percentageSum": "Sum of percentages must equal 100."
   },

@@ -106,18 +106,23 @@ export const expenseFormSchema = z
           ]),
         }),
       )
-      .min(1, 'paidForMin1')
-      .superRefine((paidFor, ctx) => {
-        for (const { shares } of paidFor) {
-          const shareNumber = Number(shares)
-          if (shareNumber <= 0) {
-            ctx.addIssue({
-              code: z.ZodIssueCode.custom,
-              message: 'noZeroShares',
-            })
-          }
-        }
-      }),
+      .min(1, 'paidForMin1'),
+    items: z
+      .array(
+        z.object({
+          name: z.string().trim().min(1, 'min1').max(100, 'max100'),
+          originalPrice: z.string().optional(), // For converting prices in original currency, not saved.
+          // Can be negative (e.g. for a discount)
+          price: inputCoercedToNumber
+            .refine((price) => price != 0, 'amountNotZero')
+            .refine(
+              (price) => Math.abs(price) <= 10_000_000_00,
+              'amountTenMillion',
+            ),
+          paidFor: z.array(z.string()).min(1, 'itemPaidForMin1'),
+        }),
+      )
+      .default([]),
     splitMode: z
       .enum<SplitMode, [SplitMode, ...SplitMode[]]>(
         Object.values(SplitMode) as any,
@@ -143,6 +148,20 @@ export const expenseFormSchema = z
       .default('NONE'),
   })
   .superRefine((expense, ctx) => {
+    // When splitting by item, a participant who only got discounts may have a zero or negative share
+    if (expense.splitMode !== 'BY_ITEM') {
+      for (const { shares } of expense.paidFor) {
+        const shareNumber = Number(shares)
+        if (shareNumber <= 0) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: 'noZeroShares',
+            path: ['paidFor'],
+          })
+        }
+      }
+    }
+
     switch (expense.splitMode) {
       case 'EVENLY':
         break // noop
@@ -188,6 +207,16 @@ export const expenseFormSchema = z
         }
         break
       }
+      case 'BY_ITEM': {
+        if (expense.items.length === 0) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: 'itemsMin1',
+            path: ['items'],
+          })
+        }
+        break
+      }
     }
   })
   .transform((expense) => {
@@ -196,8 +225,12 @@ export const expenseFormSchema = z
       ...expense,
       paidFor: expense.paidFor.map((paidFor) => {
         const shares = paidFor.shares
-        if (typeof shares === 'string' && expense.splitMode !== 'BY_AMOUNT') {
-          // For splitting not by amount, preserve the previous behaviour of multiplying the share by 100
+        if (
+          typeof shares === 'string' &&
+          expense.splitMode !== 'BY_AMOUNT' &&
+          expense.splitMode !== 'BY_ITEM'
+        ) {
+          // For splitting not by amount (or item), preserve the previous behaviour of multiplying the share by 100
           return {
             ...paidFor,
             shares: Math.round(Number(shares) * 100),

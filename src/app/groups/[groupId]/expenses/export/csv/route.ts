@@ -10,6 +10,7 @@ const splitModeLabel = {
   BY_SHARES: 'Unevenly – By shares',
   BY_PERCENTAGE: 'Unevenly – By percentage',
   BY_AMOUNT: 'Unevenly – By amount',
+  BY_ITEM: 'Unevenly – By item',
 }
 
 function formatDate(isoDateString: Date): string {
@@ -69,7 +70,7 @@ export async function GET(
   - Original currency: The currency the amount was originally spent in.
   - Conversion rate: The rate used to convert the amount.
   - Is Reimbursement: Whether the expense is a reimbursement or not.
-  - Split mode: The method used to split the expense (e.g., Evenly, By shares, By percentage, By amount).
+  - Split mode: The method used to split the expense (e.g., Evenly, By shares, By percentage, By amount, By item).
   - UserA, UserB: User-specific data or balances (e.g., amount owed or contributed by each user).
 
   Example Table:

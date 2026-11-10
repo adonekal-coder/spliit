@@ -143,6 +143,15 @@ export function formatAmountAsDecimal(amount: number, currency: Currency) {
   return amountAsDecimal(amount, currency).toFixed(currency.decimal_digits)
 }
 
+export const enforceCurrencyPattern = (value: string) =>
+  value
+    .replace(/^\s*-/, '_') // replace leading minus with _
+    .replace(/[.,]/, '#') // replace first comma with #
+    .replace(/[-.,]/g, '') // remove other minus and commas characters
+    .replace(/_/, '-') // change back _ to minus
+    .replace(/#/, '.') // change back # to dot
+    .replace(/[^-\d.]/g, '') // remove all non-numeric characters
+
 export function formatFileSize(size: number, locale: string) {
   const formatNumber = (num: number) =>
     num.toLocaleString(locale, {

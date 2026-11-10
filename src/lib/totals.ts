@@ -48,7 +48,8 @@ export function calculateShare(
       // Divide the total expense evenly among all participants
       return expense.amount / paidFors.length
     case 'BY_AMOUNT':
-      // Directly add the user's share if the split mode is BY_AMOUNT
+    case 'BY_ITEM':
+      // Directly add the user's share if the split mode is BY_AMOUNT or BY_ITEM
       return shares
     case 'BY_PERCENTAGE':
       // Calculate the user's share based on their percentage of the total expense

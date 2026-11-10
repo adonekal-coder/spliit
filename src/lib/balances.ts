@@ -41,6 +41,7 @@ export function getBalances(
         .with('BY_SHARES', () => [paidFor.shares, totalPaidForShares])
         .with('BY_PERCENTAGE', () => [paidFor.shares, totalPaidForShares])
         .with('BY_AMOUNT', () => [paidFor.shares, totalPaidForShares])
+        .with('BY_ITEM', () => [paidFor.shares, totalPaidForShares])
         .exhaustive()
 
       const dividedAmount = isLast

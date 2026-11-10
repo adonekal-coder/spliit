@@ -26,6 +26,14 @@ export async function GET(
           conversionRate: true,
           paidById: true,
           paidFor: { select: { participantId: true, shares: true } },
+          items: {
+            select: {
+              name: true,
+              price: true,
+              paidFor: { select: { participantId: true } },
+            },
+            orderBy: { position: 'asc' },
+          },
           isReimbursement: true,
           splitMode: true,
           recurrenceRule: true,

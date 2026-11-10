@@ -1,3 +1,4 @@
+import { calculateItemizedSplit } from '@/lib/itemized'
 import { prisma } from '@/lib/prisma'
 import { ExpenseFormValues, GroupFormValues } from '@/lib/schemas'
 import {
@@ -33,6 +34,35 @@ export async function createGroup(groupFormValues: GroupFormValues) {
   })
 }
 
+/**
+ * When splitting by item, the shares are always derived from the items, so that both can never be inconsistent.
+ * Otherwise, the expense has no items.
+ */
+function resolveItemizedSplit(
+  expenseFormValues: ExpenseFormValues,
+): Pick<ExpenseFormValues, 'items' | 'paidFor'> {
+  if (expenseFormValues.splitMode !== 'BY_ITEM')
+    return { items: [], paidFor: expenseFormValues.paidFor }
+
+  const { items } = expenseFormValues
+  const { amount, paidFor } = calculateItemizedSplit(items)
+  if (amount !== expenseFormValues.amount)
+    throw new Error('The sum of item prices must equal the expense amount')
+  return { items, paidFor }
+}
+
+function createPayloadForItems(items: ExpenseFormValues['items']) {
+  return items.map(({ name, price, paidFor }, position) => ({
+    id: randomId(),
+    name,
+    price,
+    position,
+    paidFor: {
+      create: paidFor.map((participantId) => ({ participantId })),
+    },
+  }))
+}
+
 export async function createExpense(
   expenseFormValues: ExpenseFormValues,
   groupId: string,
@@ -41,9 +71,11 @@ export async function createExpense(
   const group = await getGroup(groupId)
   if (!group) throw new Error(`Invalid group ID: ${groupId}`)
 
+  const { items, paidFor } = resolveItemizedSplit(expenseFormValues)
+
   for (const participant of [
     expenseFormValues.paidBy,
-    ...expenseFormValues.paidFor.map((p) => p.participant),
+    ...paidFor.map((p) => p.participant),
   ]) {
     if (!group.participants.some((p) => p.id === participant))
       throw new Error(`Invalid participant ID: ${participant}`)
@@ -87,12 +119,13 @@ export async function createExpense(
       },
       paidFor: {
         createMany: {
-          data: expenseFormValues.paidFor.map((paidFor) => ({
+          data: paidFor.map((paidFor) => ({
             participantId: paidFor.participant,
             shares: paidFor.shares,
           })),
         },
       },
+      items: { create: createPayloadForItems(items) },
       isReimbursement: expenseFormValues.isReimbursement,
       documents: {
         createMany: {
@@ -163,9 +196,11 @@ export async function updateExpense(
   const existingExpense = await getExpense(groupId, expenseId)
   if (!existingExpense) throw new Error(`Invalid expense ID: ${expenseId}`)
 
+  const { items, paidFor: newPaidFor } = resolveItemizedSplit(expenseFormValues)
+
   for (const participant of [
     expenseFormValues.paidBy,
-    ...expenseFormValues.paidFor.map((p) => p.participant),
+    ...newPaidFor.map((p) => p.participant),
   ]) {
     if (!group.participants.some((p) => p.id === participant))
       throw new Error(`Invalid participant ID: ${participant}`)
@@ -209,7 +244,10 @@ export async function updateExpense(
     data: {
       expenseDate: expenseFormValues.expenseDate,
       amount: expenseFormValues.amount,
-      originalAmount: expenseFormValues.originalAmount,
+      originalAmount:
+        expenseFormValues.splitMode === 'BY_ITEM'
+          ? null // The amount is derived from the items, do not keep a stale original amount
+          : expenseFormValues.originalAmount,
       originalCurrency: expenseFormValues.originalCurrency,
       conversionRate: expenseFormValues.conversionRate,
       title: expenseFormValues.title,
@@ -218,7 +256,7 @@ export async function updateExpense(
       splitMode: expenseFormValues.splitMode,
       recurrenceRule: expenseFormValues.recurrenceRule,
       paidFor: {
-        create: expenseFormValues.paidFor
+        create: newPaidFor
           .filter(
             (p) =>
               !existingExpense.paidFor.some(
@@ -229,7 +267,7 @@ export async function updateExpense(
             participantId: paidFor.participant,
             shares: paidFor.shares,
           })),
-        update: expenseFormValues.paidFor.map((paidFor) => ({
+        update: newPaidFor.map((paidFor) => ({
           where: {
             expenseId_participantId: {
               expenseId,
@@ -242,10 +280,14 @@ export async function updateExpense(
         })),
         deleteMany: existingExpense.paidFor.filter(
           (paidFor) =>
-            !expenseFormValues.paidFor.some(
-              (pf) => pf.participant === paidFor.participantId,
-            ),
+            !newPaidFor.some((pf) => pf.participant === paidFor.participantId),
         ),
+      },
+      items: {
+        create: createPayloadForItems(items),
+        deleteMany: {
+          id: { in: existingExpense.items.map((item) => item.id) },
+        },
       },
       recurringExpenseLink: {
         ...(isCreateRecurrenceExpenseLink
@@ -385,6 +427,7 @@ export async function getExpense(groupId: string, expenseId: string) {
     include: {
       paidBy: true,
       paidFor: true,
+      items: { include: { paidFor: true }, orderBy: { position: 'asc' } },
       category: true,
       documents: true,
       recurringExpenseLink: true,
@@ -463,6 +506,7 @@ async function createRecurringExpenses() {
           include: {
             paidBy: true,
             paidFor: true,
+            items: { include: { paidFor: true }, orderBy: { position: 'asc' } },
             category: true,
             documents: true,
           },
@@ -489,6 +533,7 @@ async function createRecurringExpenses() {
         category,
         paidBy,
         paidFor,
+        items,
         documents,
         ...destructeredCurrentExpenseRecord
       } = currentExpenseRecord
@@ -510,6 +555,15 @@ async function createRecurringExpenses() {
                   })),
                 },
               },
+              items: {
+                create: createPayloadForItems(
+                  items.map(({ name, price, paidFor }) => ({
+                    name,
+                    price,
+                    paidFor: paidFor.map(({ participantId }) => participantId),
+                  })),
+                ),
+              },
               documents: {
                 connect: currentExpenseRecord.documents.map(
                   (documentRecord) => ({
@@ -530,6 +584,10 @@ async function createRecurringExpenses() {
             // Ensure that the same information is available on the returned record that was created
             include: {
               paidFor: true,
+              items: {
+                include: { paidFor: true },
+                orderBy: { position: 'asc' },
+              },
               documents: true,
               category: true,
               paidBy: true,

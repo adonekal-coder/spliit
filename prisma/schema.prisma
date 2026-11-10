@@ -24,12 +24,13 @@ model Group {
 }
 
 model Participant {
-  id              String           @id
+  id              String               @id
   name            String
-  group           Group            @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  group           Group                @relation(fields: [groupId], references: [id], onDelete: Cascade)
   groupId         String
   expensesPaidBy  Expense[]
   expensesPaidFor ExpensePaidFor[]
+  expenseItems    ExpenseItemPaidFor[]
 }
 
 model Category {
@@ -56,6 +57,7 @@ model Expense {
   groupId          String
   isReimbursement  Boolean           @default(false)
   splitMode        SplitMode         @default(EVENLY)
+  items            ExpenseItem[]
   createdAt        DateTime          @default(now())
   documents        ExpenseDocument[]
   notes            String?
@@ -79,6 +81,7 @@ enum SplitMode {
   BY_SHARES
   BY_PERCENTAGE
   BY_AMOUNT
+  BY_ITEM
 }
 
 model RecurringExpenseLink {
@@ -112,6 +115,29 @@ model ExpensePaidFor {
   shares        Int         @default(1)
 
   @@id([expenseId, participantId])
+}
+
+// Only used with the BY_ITEM split mode. The shares of each participant are derived from the items and also stored
+// in ExpensePaidFor (as amounts), so that balances and totals can be calculated without loading the items.
+model ExpenseItem {
+  id        String               @id
+  expense   Expense              @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  expenseId String
+  name      String
+  price     Int
+  position  Int
+  paidFor   ExpenseItemPaidFor[]
+
+  @@index([expenseId])
+}
+
+model ExpenseItemPaidFor {
+  item          ExpenseItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  participant   Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  itemId        String
+  participantId String
+
+  @@id([itemId, participantId])
 }
 
 model Activity {
